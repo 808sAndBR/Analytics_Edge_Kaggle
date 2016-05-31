@@ -1,0 +1,42 @@
+---
+title: "Kaggle"
+author: "Scott Brenstuhl"
+date: "May 29, 2016"
+output: html_document
+---
+
+
+```{r, echo = FALSE}
+# setwd("/Users/scottbrenstuhl/Projects/AnalyticsEdge/Analytics_Edge_Kaggle/")
+
+library(caret)
+library(dplyr)
+library(readr)
+
+training <- read.csv("data/train2016.csv", na.strings = "")
+testing <- read.csv("data/test2016.csv", na.strings = "")
+```
+
+
+# Exploration
+```{r, echo=FALSE}
+str(training)
+
+# Commented out to avoid Rmd error
+#View(head(training,10))
+
+prop.table(table(complete.cases(training)))
+
+# No overlap in user_ids to exploit 
+table(testing$USER_ID %in% training$USER_ID)
+```
+
+Very low percent of respondednts answered all questions so I will need to figure out some good impution strategies.
+
+
+```{r, echo=FALSE}
+
+CART <- rpart(Party ~., data = training)
+
+prp(CART)
+```
