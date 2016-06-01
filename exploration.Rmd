@@ -11,10 +11,12 @@ output: html_document
 
 library(caret)
 library(dplyr)
+library(ggplot2)
+library(mice)
 library(readr)
 
-training <- read.csv("data/train2016.csv", na.strings = "")
-testing <- read.csv("data/test2016.csv", na.strings = "")
+training <- read.csv("data/train2016.csv", na.strings = c("NA",""))
+testing <- read.csv("data/test2016.csv", na.strings = c("NA",""))
 ```
 
 
@@ -39,4 +41,70 @@ Very low percent of respondednts answered all questions so I will need to figure
 CART <- rpart(Party ~., data = training)
 
 prp(CART)
+
+
+```
+
+
+```{r, echo=FALSE}
+# Make data sets considering NA a choice of no response
+
+removeNA <- function(x){
+    if(is.factor(x) & sum(is.na(x)) > 0){
+        factor(as.character(x), levels = c(levels(x), "noResponse"))
+    }else{
+            x
+        }
+    }
+
+trainNoAns <- as.data.frame(lapply(training, removeNA))
+testNoAns <- as.data.frame(lapply(testing, removeNA))
+
+
+trainNoAns[,-2][is.na(trainNoAns[,-2])] <- "noResponse"
+testNoAns[,-2][is.na(testNoAns[,-2])] <- "noResponse"
+head(trainNoAns[,-1:-2])
+head(trainNoAns[,1:5])
+```
+
+```{r, echo = FALSE}
+
+prop.table(table(training$EducationLevel, useNA = "always"))[is.na(names(prop.table(table(training$EducationLevel, useNA = "always"))))] >.05
+
+percent_missing <- function(column){
+        col_table <- prop.table(table(column, useNA = "always"))
+        as.numeric(col_table[is.na(names(col_table))])
+    }
+
+ans_missing <- lapply(training, percent_missing) 
+
+ans_missing <- data_frame(qustion = names(ans_missing),
+                          perc_missing = as.numeric(ans_missing)) %>%
+    arrange(ans_missing)
+
+class(ans_missing$per)
+
+qplot(ans_missing$qustion, y= ans_missing$perc_missing )
+?qplot
+
+```
+
+
+```{r, echo = FALSE}
+
+baseGLM <- glm(Party~.-USER_ID, training, family = binomial)
+summary(baseGLM)
+
+noAnsGLM <- glm(Party~.-USER_ID, trainNoAns, family = binomial)
+summary(noAnsGLM)
+
+class(training$YOB)
+class(trainNoAns$YOB)
+```
+
+
+```{r, echo=FALSE, cache= TRUE}
+
+noAnsRF <- rf(Party~.-USER_ID , data = trainNoAns)
+
 ```
