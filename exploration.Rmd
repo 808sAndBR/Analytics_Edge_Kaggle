@@ -69,25 +69,42 @@ head(trainNoAns[,1:5])
 
 ```{r, echo = FALSE}
 
-prop.table(table(training$EducationLevel, useNA = "always"))[is.na(names(prop.table(table(training$EducationLevel, useNA = "always"))))] >.05
-
 percent_missing <- function(column){
         col_table <- prop.table(table(column, useNA = "always"))
         as.numeric(col_table[is.na(names(col_table))])
     }
 
 ans_missing <- lapply(training, percent_missing) 
-
 ans_missing <- data_frame(qustion = names(ans_missing),
-                          perc_missing = as.numeric(ans_missing)) %>%
-    arrange(ans_missing)
+                          perc_missing = as.numeric(ans_missing))
 
-class(ans_missing$per)
 
-qplot(ans_missing$qustion, y= ans_missing$perc_missing )
-?qplot
+qplot(qustion, y=perc_missing, data = subset(ans_missing, perc_missing >.45 ))
+qplot(qustion, y=perc_missing, data = subset(ans_missing, perc_missing <.30 ))
+qplot(qustion, y=perc_missing, data = subset(ans_missing, perc_missing >.30 &
+                                                 perc_missing <.45 ))
+```
+
+Q124742 is missing a lot more responses than the rest so it will probably be
+best to remove it.
+
+Only the non-question (demagraphics) have less than 30% missing which isn't too
+surprising.
+
+```{r, echo = FALSE}
+# Not so helpful but want to remember it for now
+#md.pattern(training)
+methods(mice)
+
+# This might be better to do after deciding which columns to use?
+missing_perc <- apply(is.na(training),1,function(x) sum(x)/108)
+table(round(missing_perc, digits = 1))
+prop.table(table(missing_perc >.5))
+
+dim(training)
 
 ```
+
 
 
 ```{r, echo = FALSE}
