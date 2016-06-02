@@ -216,6 +216,37 @@ write.csv(impRF_submission, "submissions/Imp_RF.csv", row.names=FALSE)
 ```
 
 
+```{r, echo = FALSE}
+# I want to replace all NA with 0 Positive with 1 and negative with -1
+
+#since the first facor level is No when yes/no lets make it negative
+sapply(training, function(x) levels(x)[1])
+
+train_num <- training
+
+# Get it to stop yelling at me about factors
+train_num[grepl("^Q" , names(train_num))] <- lapply(
+    train_num[grepl("^Q" , names(train_num))],
+    as.character)
+
+# Change strings to numbers then changes NA to 0
+numericizer <- function(column) {
+    lev1 <- levels(column)[1]
+    column <- as.character(column)
+    column <- ifelse(column == lev1, -1, 1)
+    column[is.na(column)] <- 0
+    column
+}
+
+train_num[grepl("^Q" , names(train_num))] <- lapply(train_num[grepl("^Q" , names(train_num))], numericizer)
+
+str(train_num)
+head(train_num[grepl("^Q" , names(train_num))])
+
+
+
+```
+
 
 ```{r, echo = FALSE}
 
@@ -236,7 +267,10 @@ noAnsRF <- rf(Party~.-USER_ID , data = trainNoAns)
 
 ```
 
+## Todo
 
+Control for YOB (scale)
+Reapply previous things 
 
 ```{r results table, echo=FALSE}
 c("CART", 0.61207, "Basic CART without doing anything to the data.")
