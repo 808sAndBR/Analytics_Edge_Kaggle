@@ -10,10 +10,16 @@ output: html_document
 # setwd("/Users/scottbrenstuhl/Projects/AnalyticsEdge/Analytics_Edge_Kaggle/")
 
 library(caret)
+library(doMC)
 library(dplyr)
 library(ggplot2)
 library(mice)
+library(randomForest)
 library(readr)
+library(rpart)
+library(rpart.plot)
+
+registerDoMC(cores = 4)
 
 training <- read.csv("data/train2016.csv", na.strings = c("NA",""))
 testing <- read.csv("data/test2016.csv", na.strings = c("NA",""))
@@ -33,18 +39,23 @@ prop.table(table(complete.cases(training)))
 table(testing$USER_ID %in% training$USER_ID)
 ```
 
-Very low percent of respondednts answered all questions so I will need to figure out some good impution strategies.
+Very low percent of respondednts answered all questions so I will probably need
+to figure out some good impution strategies.
 
 
 ```{r, echo=FALSE}
 
-CART <- rpart(Party ~., data = training)
-
+CART <- rpart(Party ~.-USER_ID, data = training, method = "class")
 prp(CART)
 
+CART_pred <- predict(CART, newdata = testing, type = "class")
+
+CART_submission <- data.frame(USER_ID = testing$USER_ID, 
+                              Predictions = CART_pred)
+
+write.csv(CART_submission, "submissions/BasicCART.csv", row.names=FALSE)
 
 ```
-
 
 ```{r, echo=FALSE}
 # Make data sets considering NA a choice of no response
@@ -63,9 +74,45 @@ testNoAns <- as.data.frame(lapply(testing, removeNA))
 
 trainNoAns[,-2][is.na(trainNoAns[,-2])] <- "noResponse"
 testNoAns[,-2][is.na(testNoAns[,-2])] <- "noResponse"
-head(trainNoAns[,-1:-2])
-head(trainNoAns[,1:5])
+
+avg_YOB <-round(mean(na.omit(trainNoAns$YOB)))
+
+trainNoAns$YOB[is.na(trainNoAns$YOB)] <- avg_YOB
+testNoAns$YOB[is.na(testNoAns$YOB)] <- avg_YOB
+
+table(trainNoAns$YOB)
 ```
+
+I should make 2039 be 1939
+
+```{r, echo=FALSE}
+noRespCART <- rpart(Party ~.-USER_ID, data = training, method = "class")
+
+# These are the same so no point in predicting off this one
+prp(noRespCART)
+prp(CART)
+
+
+# Lets try random forest instead though since we got rid of those pesky NAs
+set.seed(1809)
+noResp_RF <-train(Party ~.-USER_ID, data = trainNoAns, method = "rf",
+                trControl = trainControl(method="cv", number=5),
+                prox=TRUE, allowParallel=TRUE)
+
+print(noResp_RF)
+print(noResp_RF$finalModel)
+
+varImp(noResp_RF)
+
+noResp_RF_pred <- predict.train(noResp_RF, newdata = testNoAns)
+
+noResp_submission <- data.frame(USER_ID = testing$USER_ID, 
+                              Predictions = noResp_RF_pred)
+
+write.csv(noResp_submission, "submissions/NoResp_RF.csv", row.names=FALSE)
+
+```
+
 
 ```{r, echo = FALSE}
 
@@ -94,7 +141,6 @@ surprising.
 ```{r, echo = FALSE}
 # Not so helpful but want to remember it for now
 #md.pattern(training)
-methods(mice)
 
 # This might be better to do after deciding which columns to use?
 missing_perc <- apply(is.na(training),1,function(x) sum(x)/108)
@@ -102,6 +148,70 @@ table(round(missing_perc, digits = 1))
 prop.table(table(missing_perc >.5))
 
 dim(training)
+
+```
+
+
+```{r echo = FALSE}
+training$Training <- 1
+testing$Training <- 0
+
+all_data <- rbind(training[names(training) != "Party"], testing)
+
+# Looks like it worked
+dim(training)
+dim(testing)
+dim(all_data)
+summary(all_data)
+
+imputed_all <- complete(mice(all_data[names(all_data) != 
+                                          c("USER_ID", "Training")]))
+
+write.csv(imputed_all, "data/imputed_all.csv", row.names=FALSE)
+dim(training)
+
+training$Training <- NULL
+testing$Training <- NULL
+
+imp_train <- cbind(USER_ID = training$USER_ID, 
+                   Party = training$Party, 
+                   imputed_all[1:5568,])
+imp_test <- cbind(USER_ID = testing$USER_ID, imputed_all[5569:nrow(imputed_all),])
+
+```
+
+```{r, echo=FALSE}
+imp_CART <- rpart(Party ~.-USER_ID, data = imp_train, method = "class")
+
+# still the same but people get sorted better with data imputed 
+prp(CART)
+prp(imp_CART)
+
+imp_CART_pred <- predict(imp_CART, newdata = testing, type = "class")
+
+imp_CART_submission <- data.frame(USER_ID = testing$USER_ID, 
+                              Predictions = imp_CART_pred)
+
+write.csv(imp_CART_submission, "submissions/ImpCART.csv", row.names=FALSE)
+
+```
+
+```{r, echo = FALSE}
+
+set.seed(1809)
+imp_RF <-train(Party ~.-USER_ID, data = imp_train, method = "rf",
+                trControl = trainControl(method="cv", number=5),
+                prox=TRUE, allowParallel=TRUE)
+
+print(imp_RF)
+print(imp_RF$finalModel)
+
+imp_RF_pred <- predict.train(imp_RF, newdata = imp_test)
+
+impRF_submission <- data.frame(USER_ID = testing$USER_ID, 
+                              Predictions = imp_RF_pred)
+
+write.csv(impRF_submission, "submissions/Imp_RF.csv", row.names=FALSE)
 
 ```
 
@@ -125,3 +235,15 @@ class(trainNoAns$YOB)
 noAnsRF <- rf(Party~.-USER_ID , data = trainNoAns)
 
 ```
+
+
+
+```{r results table, echo=FALSE}
+c("CART", 0.61207, "Basic CART without doing anything to the data.")
+c("noResp_RF", 0.62069, "Random Forest with NA = noResponse and NA YOB = mean YOB")
+c("imp_CART", 0.63649)
+c("imp_RF",0.62069)
+
+```
+
+
