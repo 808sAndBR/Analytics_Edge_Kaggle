@@ -223,6 +223,7 @@ write.csv(impRF_submission, "submissions/Imp_RF.csv", row.names=FALSE)
 sapply(training, function(x) levels(x)[1])
 
 train_num <- training
+test_num <- testing
 
 # Get it to stop yelling at me about factors
 train_num[grepl("^Q" , names(train_num))] <- lapply(
@@ -239,9 +240,10 @@ numericizer <- function(column) {
 }
 
 train_num[grepl("^Q" , names(train_num))] <- lapply(train_num[grepl("^Q" , names(train_num))], numericizer)
+test_num[grepl("^Q" , names(test_num))] <- lapply(test_num[grepl("^Q" , names(test_num))], numericizer)
+```
 
-str(train_num)
-head(train_num[grepl("^Q" , names(train_num))])
+```{r, echo = FALSE}
 
 
 
