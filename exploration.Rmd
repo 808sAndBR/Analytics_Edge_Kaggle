@@ -225,11 +225,6 @@ sapply(training, function(x) levels(x)[1])
 train_num <- training
 test_num <- testing
 
-# Get it to stop yelling at me about factors
-train_num[grepl("^Q" , names(train_num))] <- lapply(
-    train_num[grepl("^Q" , names(train_num))],
-    as.character)
-
 # Change strings to numbers then changes NA to 0
 numericizer <- function(column) {
     lev1 <- levels(column)[1]
@@ -241,31 +236,101 @@ numericizer <- function(column) {
 
 train_num[grepl("^Q" , names(train_num))] <- lapply(train_num[grepl("^Q" , names(train_num))], numericizer)
 test_num[grepl("^Q" , names(test_num))] <- lapply(test_num[grepl("^Q" , names(test_num))], numericizer)
+
+## Try imputed YOB but also mean(YOB)
+train_num$YOB <- imp_train$YOB
+test_num$YOB <- imp_test$YOB
+test_num$Income <- imp_test$Income
+test_num$HouseholdStatus <- imp_test$HouseholdStatus
+test_num$EducationLevel <- imp_test$EducationLevel
+test_num$Gender <- imp_test$Gender
+
 ```
 
 ```{r, echo = FALSE}
 
+num_CART <- train(Party ~.-USER_ID, data = train_num, method = "rpart")
 
+prp(num_CART$finalModel)
 
-```
+num_CART_pred <- predict.train(num_CART, newdata = test_num)
 
+numCART_submission <- data.frame(USER_ID = testing$USER_ID, 
+                              Predictions = num_CART_pred)
 
-```{r, echo = FALSE}
+write.csv(numCART_submission, "submissions/num_CART.csv", row.names=FALSE)
+
+num_RF <-train(Party ~.-USER_ID, data = train_num, method = "rf",
+                trControl = trainControl(method="cv", number=5),
+                preProcess = c("scale", "center"),
+                prox=TRUE, allowParallel=TRUE)
+
+num_RF_pred <- predict.train(num_RF, newdata = test_num)
+
+numRF_submission <- data.frame(USER_ID = testing$USER_ID, 
+                              Predictions = num_RF_pred)
+
+write.csv(numRF_submission, "submissions/num_RF.csv", row.names=FALSE)
+
+num_GLM<- glm(Party~.-USER_ID, train_num, family = binomial)
+summary(num_GLM)
 
 baseGLM <- glm(Party~.-USER_ID, training, family = binomial)
 summary(baseGLM)
 
-noAnsGLM <- glm(Party~.-USER_ID, trainNoAns, family = binomial)
-summary(noAnsGLM)
+num_GLM_pred <- predict(num_GLM, newdata = train_num)
 
-class(training$YOB)
-class(trainNoAns$YOB)
+numGLM_submission <- data.frame(USER_ID = testing$USER_ID, 
+                              Predictions = num_GLM_pred)
+
+write.csv(numRF_submission, "submissions/num_GLM.csv", row.names=FALSE)
+
+```
+
+
+```{r, echo = FALSE}
+
 ```
 
 
 ```{r, echo=FALSE, cache= TRUE}
 
 noAnsRF <- rf(Party~.-USER_ID , data = trainNoAns)
+
+```
+
+```{r, echo = FALSE}
+# should probably do this as part of data cleaning
+sort(training$YOB[(2016-training$YOB) >100]) + 100
+
+clean_train <- training
+clean_test <- testing
+
+clean_train$YOB[(2016 - clean_train$YOB) >100 & !is.na(clean_train$YOB)] <- clean_train$YOB[
+    (2016 - clean_train$YOB) >100 & !is.na(clean_train$YOB)]+100
+clean_test$YOB[(2016 - clean_test$YOB) >100 & !is.na(clean_test$YOB)] <- clean_test$YOB[
+    (2016 - clean_test$YOB) >100 & !is.na(clean_test$YOB)]+100
+
+clean_train$YOB[(clean_train$YOB) == 2039 & !is.na(clean_test$YOB)] <- 1939
+
+hist(2016-clean_train$YOB, breaks = 20)
+
+sort(unique(clean_train$YOB))
+
+age_bucket <- function(yob){
+    age <- 2016 - yob
+    if(is.na(age)) NA
+    else if(age <= 20) "Under 21"
+    else if (age > 20 & age <=30) "21 - 30"
+    else if (age > 30 & age <=40) "31 - 40"
+    else if (age > 40 & age <=50) "41 - 50"
+    else if (age > 50 & age <=60) "51 - 60"
+    else "Over 60"
+}
+
+clean_train$age_bucket <- sapply(clean_train$YOB, age_bucket)
+clean_test$age_bucket <- sapply(clean_test$YOB, age_bucket)
+
 
 ```
 
@@ -279,7 +344,9 @@ c("CART", 0.61207, "Basic CART without doing anything to the data.")
 c("noResp_RF", 0.62069, "Random Forest with NA = noResponse and NA YOB = mean YOB")
 c("imp_CART", 0.63649)
 c("imp_RF",0.62069)
-
+c("num_RF", 0.61207)
+c("num_CART", 0.59626)
+c("num_GLM", 0.61207)
 ```
 
 
