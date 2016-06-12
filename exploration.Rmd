@@ -131,7 +131,7 @@ qplot(qustion, y=perc_missing, data = subset(ans_missing, perc_missing >.45 ))
 qplot(qustion, y=perc_missing, data = subset(ans_missing, perc_missing <.30 ))
 qplot(qustion, y=perc_missing, data = subset(ans_missing, perc_missing >.30 &
                                                  perc_missing <.45 ))
-?lapply
+
 ```
 
 Q124742 is missing a lot more responses than the rest so it will probably be
@@ -247,6 +247,31 @@ test_num$HouseholdStatus <- imp_test$HouseholdStatus
 test_num$EducationLevel <- imp_test$EducationLevel
 test_num$Gender <- imp_test$Gender
 
+
+train_num <- sapply(train_num, as.numeric)
+
+corr_matrix <- cor(train_num, use = "na.or.complete")
+
+findCorrelation(corr_matrix, .5)
+colnames(train_num)[107]
+
+control <- trainControl(method="repeatedcv", number=10, repeats=3)
+model <- train(Party~.-USER_ID, data=train_num,
+               preProcess="scale", trControl=control)
+importance <- varImp(model, scale=FALSE)
+plot(importance)
+
+corr_matrix <- cor(select(clean_train, contains("Q")), use = "na.or.complete")
+View(corr_matrix)
+findCorrelation(corr_matrix, .5)
+
+control2 <- rfeControl(functions=rfFuncs, method="cv", number=10)
+
+features <- clean_na_conv_train[!names(clean_na_conv_train) %in% c("Party","YOB")]
+results <- rfe(features, clean_na_conv_train$Party, rfeControl=control2)
+
+
+
 ```
 
 ```{r, echo = FALSE}
@@ -286,11 +311,6 @@ numGLM_submission <- data.frame(USER_ID = testing$USER_ID,
                               Predictions = num_GLM_pred)
 
 write.csv(numRF_submission, "submissions/num_GLM.csv", row.names=FALSE)
-
-```
-
-
-```{r, echo = FALSE}
 
 ```
 
@@ -355,15 +375,40 @@ findCorrelation(corr_matrix, .5)
 
 control <- trainControl(method="repeatedcv", number=10, repeats=3)
 model <- train(Party~.-USER_ID-YOB, data=clean_train,
-               preProcess="scale", trControl=control, )
+               preProcess="scale", trControl=control)
 importance <- varImp(model, scale=FALSE)
 plot(importance)
 
+control2 <- rfeControl(functions=rfFuncs, method="cv", number=10)
+
+clean_na_conv_train <- as.data.frame(lapply(clean_train, removeNA),stringsAsFactors = F)
+
+clean_na_conv_train[is.na(clean_na_conv_train)] <- "noResponse"
+clean_na_conv_train$age_bucket <- as.factor(clean_na_conv_train$age_bucket)
+
+features <- clean_na_conv_train[!names(clean_na_conv_train) %in% c("Party","YOB")]
+results <- rfe(features, clean_na_conv_train$Party, rfeControl=control2)
+
+
+
+all_cleaned <- rbind(clean_train[names(clean_train) != "Party"], clean_test)
+imputed <- complete(mice(all_cleaned[names(all_cleaned) != 
+                                          c("USER_ID", "YOB")]))
+
+
+?rfe
 ```
 
+```{r, echo=FALSE}
+control <- trainControl(method="repeatedcv", number=10, repeats=3)
+model <- train(Party~.-USER_ID-YOB, data=clean_train,
+               preProcess="scale", trControl=control)
+importance <- varImp(model, scale=FALSE)
+plot(importance)
+```
 ## Todo
 
-Control for YOB (scale)
+
 Reapply previous things 
 
 ```{r results table, echo=FALSE}
@@ -375,5 +420,79 @@ c("num_RF", 0.61207)
 c("num_CART", 0.59626)
 c("num_GLM", 0.61207)
 ```
+
+
+
+
+```{r, echo=FALSE}
+fs_train <- read.csv("data/train2016.csv", na.strings = c("NA",""))
+fs_test <- read.csv("data/test2016.csv", na.strings = c("NA",""))
+
+ans_missing <- function(row){
+        sum(is.na(row))
+    }
+
+fs_train$ans_missing <- apply(fs_train, 1, ans_missing)
+fs_test$ans_missing <- apply(fs_test, 1, ans_missing)
+
+age_bucket <- function(yob){
+    age <- 2016 - yob
+    if(is.na(age)) NA
+    else if(age <= 20) "Under 21"
+    else if (age > 20 & age <=30) "21 - 30"
+    else if (age > 30 & age <=40) "31 - 40"
+    else if (age > 40 & age <=50) "41 - 50"
+    else if (age > 50 & age <=60) "51 - 60"
+    else "Over 60"
+}
+
+fs_train$age_bucket <- sapply(fs_train$YOB, age_bucket)
+fs_test$age_bucket <- sapply(fs_test$YOB, age_bucket)
+
+fs_train$age_bucket <- as.factor(fs_train$age_bucket)
+fs_test$age_bucket <- as.factor(fs_test$age_bucket)
+
+all_dema <- rbind(select(fs_train, age_bucket, EducationLevel,
+                         HouseholdStatus, Income, Gender),
+                  select(fs_test, age_bucket, EducationLevel,
+                         HouseholdStatus, Income, Gender))
+
+fs_impute <- complete(mice(all_dema))
+
+dim(fs_train)
+dim(fs_test)
+dim(fs_impute)
+impute_train <- fs_impute[1:5568,]
+impute_test <- fs_impute[5569:6960,]
+
+# put all the imputations into the DFs
+fs_train$Gender <- impute_train$Gender
+fs_train$age_bucket <- impute_train$age_bucket
+fs_train$EducationLevel <- impute_train$EducationLevel
+fs_train$HouseholdStatus <- impute_train$HouseholdStatus
+fs_train$Income <- impute_train$Income
+
+fs_test$Gender <- impute_test$Gender
+fs_test$age_bucket <- impute_test$age_bucket
+fs_test$EducationLevel <- impute_test$EducationLevel
+fs_test$HouseholdStatus <- impute_test$HouseholdStatus
+fs_test$Income <- impute_test$Income
+
+# remove YOB now that we have buckets
+fs_train$YOB <- NULL
+fs_test$YOB <- NULL
+
+
+
+
+
+```
+
+
+
+
+
+
+
 
 
