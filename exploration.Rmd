@@ -362,8 +362,6 @@ clean_train$no_ans <- apply(clean_train, 1, ans_missing)
 clean_test$no_ans <- apply(clean_test, 1, ans_missing)
 
 foo <- glm(Party~.-USER_ID-YOB, clean_train, family = binomial)
-summary(foo)
-
 
 clean_train[grepl("Q",names(clean_train))] <- lapply(
     clean_train[grepl("Q",names(clean_train))], 
@@ -396,7 +394,6 @@ imputed <- complete(mice(all_cleaned[names(all_cleaned) !=
                                           c("USER_ID", "YOB")]))
 
 
-?rfe
 ```
 
 ```{r, echo=FALSE}
@@ -483,13 +480,98 @@ fs_train$YOB <- NULL
 fs_test$YOB <- NULL
 
 
+num_fs_train <- sapply(fs_train, as.numeric)
 
+corr_matrix <- cor(num_fs_train, use = "na.or.complete")
+findCorrelation(corr_matrix, cutoff=0.5)
+
+control <- trainControl(method="repeatedcv", number=10, repeats=3)
+
+model <- train(Party~., data=fs_train, method="lvq", preProcess="scale",
+               trControl=control)
+
+importance <- varImp(model, scale=FALSE)
+plot(importance)
+
+control2 <- rfeControl(functions=rfFuncs, method="cv", number=10)
+results <- rfe(select(fs_train,-Party), fs_train$Party, rfeControl=control2)
+
+fs_CART <- rpart(Party ~.-USER_ID, data = fs_train, method = "class")
+prp(fs_CART)
+
+fs_CART_pred <- predict(fs_CART, newdata = fs_test, type = "class")
+
+fs_CART_submission <- data.frame(USER_ID = fs_test$USER_ID, 
+                              Predictions = fs_CART_pred)
+
+write.csv(fs_CART_submission, "submissions/fsCART.csv", row.names=FALSE)
+
+fs_GLM <- glm(Party~.-USER_ID, fs_train, family = binomial)
+summary(fs_GLM)
+
+fs_GLM_pred <- predict(fs_GLM, newdata = fs_test)
+
+fs_GLM_submission <- data.frame(USER_ID = fs_test$USER_ID, 
+                              Predictions = fs_GLM_pred)
+
+write.csv(fs_GLM_submission, "submissions/fs_GLM.csv", row.names=FALSE)
+
+fs_num_train <- fs_train
+fs_num_test <- fs_test
+
+fs_num_train[grepl("^Q" , names(fs_num_train))] <- lapply(fs_num_train[grepl("^Q" , names(fs_num_train))], numericizer)
+
+fs_num_test[grepl("^Q" , names(fs_num_test))] <- lapply(fs_num_test[grepl("^Q" , names(fs_num_test))], numericizer)
+
+fs_num_RF2 <-train(Party ~.-USER_ID,preProcess = c("scale", "center"),
+                  data = fs_num_train, method = "rf", 
+                  trControl = trainControl(method="cv", number=5),
+                  prox=TRUE, allowParallel=TRUE )
+
+fs_num_RF3 <-train(Party ~.-USER_ID-ans_missing, preProcess = c("scale", "center"),
+                  data = fs_num_train, method = "rf", 
+                  trControl = trainControl(method="cv", number=5),
+                  prox=TRUE, allowParallel=TRUE )
+
+print(fs_num_RF)
+print(fs_num_RF2)
+
+varImp(fs_num_RF)
+varImp(fs_num_RF2)
+# with no pre-processing .612 - .625 accuracy
+
+
+fs_RF_pred <- predict.train(fs_num_RF, newdata = fs_num_test)
+
+fs_RF_submission <- data.frame(USER_ID = fs_num_test$USER_ID, 
+                              Predictions = fs_RF_pred)
+
+write.csv(fs_RF_submission, "submissions/fs_RF.csv", row.names=FALSE)
 
 
 ```
 
-
-
+        Importance
+Q115611     0.5996
+Q98197      0.5915
+Q113181     0.5877
+Gender      0.5552
+Q98869      0.5534
+Q99480      0.5401
+Q120379     0.5391
+Q116881     0.5386
+Q115899     0.5358
+Q106272     0.5330
+Q120472     0.5328
+Q110740     0.5295
+Q106042     0.5288
+Q101596     0.5248
+Q118232     0.5242
+Q107869     0.5240
+Q120014     0.5216
+Q96024      0.5209
+Q108855     0.5207
+Q106388     0.5178
 
 
 
