@@ -11,7 +11,7 @@ output: html_document
 
 library(caret)
 library(doMC)
-library(dplyr)
+library(plyr); library(dplyr)
 library(ggplot2)
 library(mice)
 library(mlbench)
@@ -207,6 +207,7 @@ imp_RF <-train(Party ~.-USER_ID, data = imp_train, method = "rf",
 
 print(imp_RF)
 print(imp_RF$finalModel)
+varImp(imp_RF)
 
 imp_RF_pred <- predict.train(imp_RF, newdata = imp_test)
 
@@ -487,14 +488,16 @@ findCorrelation(corr_matrix, cutoff=0.5)
 
 control <- trainControl(method="repeatedcv", number=10, repeats=3)
 
-model <- train(Party~., data=fs_train, method="lvq", preProcess="scale",
-               trControl=control)
+# this keeps crashing R
+#model <- train(Party~., data=fs_train, method="lvq", preProcess="scale",
+#              trControl=control)
 
-importance <- varImp(model, scale=FALSE)
-plot(importance)
+#importance <- varImp(model)
 
-control2 <- rfeControl(functions=rfFuncs, method="cv", number=10)
-results <- rfe(select(fs_train,-Party), fs_train$Party, rfeControl=control2)
+#plot(importance)
+
+# control2 <- rfeControl(functions=rfFuncs, method="cv", number=10)
+# results <- rfe(select(fs_train,-Party), fs_train$Party, rfeControl=control2)
 
 fs_CART <- rpart(Party ~.-USER_ID, data = fs_train, method = "class")
 prp(fs_CART)
@@ -506,10 +509,9 @@ fs_CART_submission <- data.frame(USER_ID = fs_test$USER_ID,
 
 write.csv(fs_CART_submission, "submissions/fsCART.csv", row.names=FALSE)
 
-fs_GLM <- glm(Party~.-USER_ID, fs_train, family = binomial)
-summary(fs_GLM)
+fs_GLM <- glm(Party~.-USER_ID, data=fs_train, family = binomial)
 
-fs_GLM_pred <- predict(fs_GLM, newdata = fs_test)
+fs_GLM_pred <- predict(fs_GLM, newdata = fs_test,type = "response")
 
 fs_GLM_submission <- data.frame(USER_ID = fs_test$USER_ID, 
                               Predictions = fs_GLM_pred)
@@ -535,46 +537,140 @@ fs_num_RF3 <-train(Party ~.-USER_ID-ans_missing, preProcess = c("scale", "center
 
 print(fs_num_RF)
 print(fs_num_RF2)
+print(fs_num_RF3)
 
-varImp(fs_num_RF)
-varImp(fs_num_RF2)
-# with no pre-processing .612 - .625 accuracy
+fs_num_rf_pred <- predict(fs_num_RF3, newdata = fs_num_test)
+
+fs_num_rf_submission <- data.frame(USER_ID = fs_num_test$USER_ID, 
+                              Predictions = fs_num_rf_pred)
+
+write.csv(fs_num_rf_submission, "submissions/fs_num_rf.csv", row.names=FALSE)
+
+rf3_Imp <- varImp(fs_num_RF3)$importance
+rf3_Imp <- data.frame(row.names(rf3_Imp), rf3_Imp, row.names = NULL)
+rf3_Imp <- arrange(rf3_Imp, -Overall)
+
+knn_model <- train(Party~.-USER_ID, data=fs_num_train, method="knn", preProcess="scale",
+               trControl=control)
+
+knn_importance <- varImp(knn_model)
+plot(knn_importance)
+
+fs_knn_num_pred <- predict(knn_model, newdata = fs_num_test)
+
+fs_num_knn_submission <- data.frame(USER_ID = fs_num_test$USER_ID, 
+                              Predictions = fs_knn_num_pred)
+
+write.csv(fs_num_knn_submission, "submissions/fs_num_knn.csv", row.names=FALSE)
 
 
-fs_RF_pred <- predict.train(fs_num_RF, newdata = fs_num_test)
+knn_imp <- knn_importance$importance['Democrat']
+knn_imp <- data.frame(row.names(knn_imp), knn_imp, row.names = NULL)
+knn_imp <- arrange(knn_imp, -Democrat)
 
-fs_RF_submission <- data.frame(USER_ID = fs_num_test$USER_ID, 
-                              Predictions = fs_RF_pred)
+unique(c(as.character(head(rf3_Imp,5)[,1]),
+                as.character(head(knn_imp,5)[,1])))
 
-write.csv(fs_RF_submission, "submissions/fs_RF.csv", row.names=FALSE)
+control <- rfeControl(functions=rfFuncs, method="cv", number=10)
+results <- rfe(select(fs_num_train, -Party), fs_num_train$Party, rfeControl=control)
 
+print(results)
+predictors(results)
+plot(results, type=c("g", "o"))
+
+control2 <- rfeControl(functions= nbFuncs, method="cv", number=10)
+results2 <- rfe(select(fs_train, -Party),
+                fs_train$Party, rfeControl=control2)
+print(results2)
+predictors(results2)
+plot(results2, type=c("g", "o"))
+
+control3 <- rfeControl(functions= lmFuncs, method="cv", number=10)
+results3 <- rfe(fs_num_train[names(fs_num_train) != "Party"],
+                fs_num_train$Party, rfeControl=control3)
+
+print(results3)
+predictors(results3)
+plot(results3, type=c("g", "o"))
+
+
+fs_num_RF4 <-train(Party ~Q109244 + Q115611 + Q113181 + Q98197 + Q120472 + 
+                       Gender, preProcess = c("scale", "center"),
+                   data = fs_num_train, method = "rf", 
+                   trControl = trainControl(method="cv", number=5),
+                   prox=TRUE, allowParallel=TRUE )
+
+print(fs_num_RF4)
+varImp(fs_num_RF4)
+
+fsed_num_pred <- predict(fs_num_RF4, newdata = fs_num_test)
+
+fsed_num_submission <- data.frame(USER_ID = fs_num_test$USER_ID, 
+                              Predictions = fsed_num_pred)
+
+
+write.csv(fsed_num_submission, "submissions/fsed_num_rf.csv", row.names=FALSE)
+
+fs_num_RF5 <-train(Party ~Q109244 + Q115611 + Q113181 + Q98197 + Q120472 + 
+                       Gender + age_bucket + Income + HouseholdStatus + EducationLevel,
+                   data = fs_num_train, method = "rf", 
+                   trControl = trainControl(method="cv", number=5),
+                   prox=TRUE, allowParallel=TRUE )
+
+print(fs_num_RF5)
+varImp(fs_num_RF5)
+
+selected_train <- select(imp_train, USER_ID, Party, Q98197, Q98869, Q106388,  Q108617,
+                         Q108754, Q110740, Q113181, Q115195, Q115611, Q117193,
+                         Q120379, Q121699, Q122771, Q123464, Gender, Income, HouseholdStatus,
+                         EducationLevel, YOB)
+
+selected_test <- select(imp_test,  USER_ID, Q98197, Q98869, Q106388,  Q108617,
+                         Q108754, Q110740, Q113181, Q115195, Q115611, Q117193,
+                         Q120379, Q121699, Q122771, Q123464, Gender, Income, HouseholdStatus,
+                         EducationLevel, YOB)
+
+selected_train$age_bucket <- sapply(selected_train$YOB, age_bucket)
+selected_test$age_bucket <- sapply(selected_test$YOB, age_bucket)
+
+selected_train$YOB <- NULL
+selected_test$YOB <- NULL
+
+fs_RF6<- train(Party ~. -USER_ID, data = selected_train, method = "rf", 
+                   trControl = trainControl(method="cv", number=5),
+                   prox=TRUE, allowParallel=TRUE )
+
+selected_pred <- predict(fs_RF6, newdata = selected_test)
+print(fs_RF6)
+
+fsed_num_submission <- data.frame(USER_ID = fs_num_test$USER_ID, 
+                              Predictions = fsed_num_pred)
+
+
+write.csv(fsed_num_submission, "submissions/fsed_num_rf.csv", row.names=FALSE)
+
+noResp_RF_pred
+imp_CART_pred 
+
+blend <- data.frame(fs_CART_pred,
+           noResp_RF_pred,
+           imp_RF_pred,
+           imp_CART_pred)
+
+blend$dem_votes<- apply(blend,1, function(x) sum(x == "Democrat"))
+
+blender <- function(y){
+    if(y['dem_votes'] == 2) y['fs_CART_pred']
+    else if(y['dem_votes'] > 2) "Democrat"
+    else "Republican"
+}
+
+blend_pred <- apply(blend, 1, blender)
+
+blend_submission <- data.frame(USER_ID = testing$USER_ID, 
+                              Predictions = blend_pred)
+
+
+write.csv(blend_submission, "submissions/blend.csv", row.names=FALSE)
 
 ```
-
-        Importance
-Q115611     0.5996
-Q98197      0.5915
-Q113181     0.5877
-Gender      0.5552
-Q98869      0.5534
-Q99480      0.5401
-Q120379     0.5391
-Q116881     0.5386
-Q115899     0.5358
-Q106272     0.5330
-Q120472     0.5328
-Q110740     0.5295
-Q106042     0.5288
-Q101596     0.5248
-Q118232     0.5242
-Q107869     0.5240
-Q120014     0.5216
-Q96024      0.5209
-Q108855     0.5207
-Q106388     0.5178
-
-
-
-
-
-
